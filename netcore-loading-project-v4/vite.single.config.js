@@ -7,6 +7,6 @@ export default defineConfig({
     outDir: "dist-single",
     assetsInlineLimit: 100000000,
     cssCodeSplit: false,
-    lib: { entry: "src/preview.jsx", formats: ["iife"], name: "NetCorePreview", fileName: () => "p.js", cssFileName: "p" }
+    lib: { entry: "src/preview2.jsx", formats: ["iife"], name: "NetCorePreview", fileName: () => "p.js", cssFileName: "p" }
   }
 });

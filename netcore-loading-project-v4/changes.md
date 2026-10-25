@@ -2,6 +2,10 @@
 
 A running log. The newest entry is at the top. Each change to the project is added here.
 
+## 2026-10-25: Fixed blank landing page on Windows
+- `src/landing/landing.jsx` and `src/landing/Landing.jsx` differed only by capital letters, so on Windows one overwrote the other and the page rendered nothing. Renamed the starting file to `src/landing/entry.jsx` and updated `landing.html` to load it.
+- Rule from now on: no two files in the project may have names that differ only by case.
+
 ## 2026-10-25: Sample content rewritten for a teacher's site
 - The site is a teacher's personal site where others upload projects, not a portfolio. Sample text in `src/landing/site.config.js` now describes a teacher (name, department, subjects, qualifications, office hours). The hero button reads "Browse projects".
 - Page title, header brand, footer and contact email set to sample teacher details. Structure, layout, theme and redirect are unchanged.
