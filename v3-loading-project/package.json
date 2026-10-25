@@ -1,0 +1,24 @@
+{
+  "name": "netcore-loading-project",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@fontsource/michroma": "^5.3.0",
+    "@vitejs/plugin-react": "latest",
+    "d3-geo": "^3.1.1",
+    "react": "latest",
+    "react-dom": "latest",
+    "three": "^0.186.1",
+    "topojson-client": "^3.1.0",
+    "vite": "latest",
+    "world-atlas": "^2.0.2"
+  }
+}

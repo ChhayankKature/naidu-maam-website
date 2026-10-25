@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Dr. Anita Sharma</title> <!-- SAMPLE name -->
+    <meta name="color-scheme" content="dark light" />
+    <style>
+      /* same color as the loading screen, so the jump between pages is invisible */
+      html { background: #02060a; }
+      html[data-theme="light"] { background: #ffffff; }
+    </style>
+    <script>
+      // Sets the theme before the page paints (no white/black flash).
+      // DEFAULT_THEME must match theme.default in src/landing/site.config.js.
+      (function () {
+        var DEFAULT_THEME = "dark";
+        var t = DEFAULT_THEME;
+        try { t = localStorage.getItem("nc-theme") || DEFAULT_THEME; } catch (e) {}
+        document.documentElement.setAttribute("data-theme", t === "light" ? "light" : "dark");
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/landing/landing.jsx"></script>
+  </body>
+</html>

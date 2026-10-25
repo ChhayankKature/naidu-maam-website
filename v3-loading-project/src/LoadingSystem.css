@@ -1,0 +1,84 @@
+.loading-system {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  padding: 0 20px;
+  text-align: center;
+  color: var(--nc-fill);
+}
+
+.loading-word {
+  position: relative;
+  display: inline-block;
+  margin: 0;
+  font-family: var(--nc-font);
+  font-size: var(--nc-size);
+  font-weight: 400;
+  letter-spacing: var(--nc-spacing);
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.loading-outline,
+.loading-fill {
+  display: block;
+  padding-left: var(--nc-spacing); /* balances the trailing letter-space so the word stays centered */
+}
+
+/* the unfilled letters: thin hologram outline with a colored fringe */
+.loading-outline {
+  color: transparent;
+  -webkit-text-stroke: 1.4px var(--nc-outline);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--nc-glow) 33%, transparent);
+}
+
+/* the filled letters: fills left to right with progress */
+.loading-fill {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: transparent;
+  background: linear-gradient(
+    to right,
+    var(--nc-fill) 0%,
+    var(--nc-fill) calc(var(--progress) - 8%),
+    var(--nc-fill-end) var(--progress),
+    transparent var(--progress),
+    transparent 100%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-stroke: 1.4px transparent;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--nc-glow) 60%, transparent));
+  transition: background 0.1s linear;
+}
+
+.loading-percentage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 25px;
+  margin-top: 20px;
+}
+
+.loading-percentage span {
+  width: 45px;
+  height: 1px;
+  background: #888;
+}
+
+.loading-percentage p {
+  min-width: 55px;
+  margin: 0;
+  font-family: var(--nc-font);
+  font-size: 15px;
+  letter-spacing: 4px;
+  
+}
+
+@media (max-width: 600px) {
+  .loading-word { --nc-spacing: 0.06em; }
+  .loading-percentage { margin-top: 14px; }
+}

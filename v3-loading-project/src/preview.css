@@ -1,0 +1,18 @@
+.boot-screen { height: 100vh; min-height: 0; }
+
+.replay {
+  position: fixed;
+  z-index: 20;
+  top: calc(16px + env(safe-area-inset-top, 0px));
+  right: max(16px, env(safe-area-inset-right, 0px));
+  padding: 8px 14px;
+  background: transparent;
+  color: #e8e8e8;
+  border: 1px solid #ffffff55;
+  font: 11px "Michroma", "Courier New", monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.replay:hover { background: #ffffff18; }
+.replay:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
