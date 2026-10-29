@@ -22,7 +22,7 @@ const firebaseConfig = {
 };
 
 export const app = initializeApp( {
-  apiKey: "AIzaSyCeyPt81h0TarBOeCQPwFEQ_xKhEDlXO5c",
+  apiKey: "maa chuda lo",
   authDomain: "cn-mam-website.firebaseapp.com",
   projectId: "cn-mam-website",
   storageBucket: "cn-mam-website.firebasestorage.app",
