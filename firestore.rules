@@ -1,0 +1,242 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────
+//  These rules are the real enforcement. The pages check the same
+//  things first so people get friendly messages, but anyone can bypass
+//  a web page; they can't bypass these.
+//
+//  Rule 1  only @rbunagpur.in / @rknec.edu (verified, no "+" aliases, not blocked) can write anything
+//  Rule 2  one upload per email: users/{uid}.uploadsUsed can only go up by 1, and only
+//          together with a new submission, and never above uploadsAllowed
+//  Rule 3  one "upload another" request at a time (uploadRequests/{uid})
+//  Rule 4  80 seats (slots/0 … slots/79); uploading needs a live seat
+//  Rule 5  5 MB per file: enforced in storage.rules
+//  Review  uploads land in submissionRequests; only an admin can publish them to submissions
+//  Block   an admin can block a person with a document at blocked/{uid}
+//  Admin   an admin can ALSO use the upload pages as a normal user: any email, no verification,
+//          no seat. Their uploads still go to the review queue (see canUseSite below).
+// ─────────────────────────────────────────────────────────────
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── helpers ───────────────────────────────────────────────
+    function signedIn() { return request.auth != null; }
+
+    // Blocked people (blocked/{uid} exists, created by an admin) can't write anything
+    function notBlocked() {
+      return !exists(/databases/$(database)/documents/blocked/$(request.auth.uid));
+    }
+
+    // Rule 1
+    function collegeUser() {
+      return signedIn()
+        && notBlocked()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower().matches('[^+@]+@(rbunagpur\\.in|rknec\\.edu)');
+    }
+
+    // An admin is anyone with a document at admins/{their uid}.
+    // Add those by hand in the Firebase console; nobody can write them from the website.
+    function isAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Who may act as a user on the upload pages: a college user (Rule 1) or an admin.
+    // Admins skip the domain rule, the verified-email rule and the seat rule, nothing else.
+    function canUseSite(uid) {
+      return isAdmin() || (collegeUser() && hasSeat(uid)); // admin first: an admin has no seat to look up
+    }
+
+    // Seat numbers as text: "0" … "79"
+    function validSeat(s) { return s is string && s.matches('[0-9]|[1-7][0-9]'); }
+
+    // Rule 4: does this person hold a seat that checked in during the last 5 minutes?
+    function hasSeat(uid) {
+      let session = get(/databases/$(database)/documents/sessions/$(uid)).data;
+      let slot = get(/databases/$(database)/documents/slots/$(session.slot)).data;
+      return slot.uid == uid && slot.lastSeen + duration.value(5, 'm') > request.time;
+    }
+
+    // "1" for the first upload, "2" for the second … (max 20 per person)
+    function nextN(used) {
+      return ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20'][used];
+    }
+
+    function userBefore(uid) { return get(/databases/$(database)/documents/users/$(uid)).data; }
+    function userAfter(uid)  { return getAfter(/databases/$(database)/documents/users/$(uid)).data; }
+
+    // ── users: the upload allowance ───────────────────────────
+    match /users/{uid} {
+      allow read: if (collegeUser() && request.auth.uid == uid) || isAdmin();
+
+      // first sign-in creates the record with exactly one upload
+      allow create: if (collegeUser() || isAdmin()) && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['email', 'uploadsAllowed', 'uploadsUsed', 'createdAt'])
+        && request.resource.data.keys().hasAll(['email', 'uploadsAllowed', 'uploadsUsed', 'createdAt'])
+        && request.resource.data.email == request.auth.token.email.lower()
+        && request.resource.data.uploadsAllowed == 1
+        && request.resource.data.uploadsUsed == 0
+        && request.resource.data.createdAt == request.time;
+
+      // The only thing a person can change: uploadsUsed + 1, in the same batch as their submission.
+      // Admins can change anything: grant "upload another" (uploadsAllowed + 1), or give an upload
+      // back when a project is declined (uploadsUsed - 1).
+      allow update: if isAdmin() || (
+          collegeUser() && request.auth.uid == uid && hasSeat(uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uploadsUsed'])
+          && request.resource.data.uploadsUsed == resource.data.uploadsUsed + 1
+          && request.resource.data.uploadsUsed <= resource.data.uploadsAllowed
+          && existsAfter(/databases/$(database)/documents/submissionRequests/$(uid + '_' + nextN(resource.data.uploadsUsed)))
+        );
+
+      allow delete: if false;
+    }
+
+    // ── submissions: the PUBLIC gallery. Only an admin can add to it (on approval) ──
+    match /submissions/{id} {
+      allow read: if true;                       // guests can view everything
+      allow write: if isAdmin();
+    }
+
+    // ── submissionRequests: the review queue. People add their upload here ──
+    // The admin approves it (copies it to submissions) or declines it (deletes it and gives the upload back).
+    match /submissionRequests/{id} {
+      allow read: if (collegeUser() && resource.data.ownerUid == request.auth.uid) || isAdmin();
+      allow create: if canUseSite(request.auth.uid) && validSubmission(id);
+      allow update, delete: if isAdmin();        // people can't edit or withdraw (that would be a second upload)
+    }
+
+    function categoryAllows(d) {
+      let kind = d.projectKind;
+      let ext = d.get('fileExt', '');
+      return (d.category == 'game' && kind == 'link')
+        || (d.category == 'projects' && (kind == 'link' || (kind == 'file' && ext == 'pdf')))
+        || (d.category == 'presentation' && kind == 'file' && ext in ['pptx', 'ppt', 'odp', 'pdf'])
+        || (d.category in ['tools-study', 'ipr', 'story'] && kind == 'file' && ext in ['doc', 'docx', 'pdf'])
+        || (d.category == 'certification' && kind == 'file' && ext == 'pdf');
+    }
+
+    function validSubmission(id) {
+      let uid = request.auth.uid;
+      let d = request.resource.data;
+      let u = userBefore(uid);
+      let n = nextN(u.uploadsUsed);
+      let base = ['ownerUid', 'title', 'category', 'teamNames', 'coverPath', 'coverUrl', 'projectKind', 'status', 'createdAt'];
+      let fileKeys = base.concat(['filePath', 'fileUrl', 'fileExt', 'originalName']);
+      let linkKeys = base.concat(['linkUrl']);
+      return u.uploadsUsed < u.uploadsAllowed                       // Rule 2: has an upload left
+        && userAfter(uid).uploadsUsed == u.uploadsUsed + 1          //         and uses it, in this same batch
+        && id == uid + '_' + n
+        && d.ownerUid == uid
+        && d.status == 'pending'                                    // always starts as pending review
+        && d.createdAt == request.time
+        && d.title is string && d.title.matches('[A-Za-z]{1,25}')   // a-z / A-Z only, max 25
+        && d.category in ['presentation', 'game', 'tools-study', 'ipr', 'certification', 'story', 'projects']
+        && d.teamNames is list && d.teamNames.size() >= 1 && d.teamNames.size() <= 6
+        && d.coverPath == 'submissions/' + uid + '/' + n + '/cover.webp'
+        && d.coverUrl is string && d.coverUrl.size() <= 1000
+        && categoryAllows(d)
+        && (
+          (d.projectKind == 'file'
+            && d.keys().hasOnly(fileKeys) && d.keys().hasAll(fileKeys)
+            && d.filePath == 'submissions/' + uid + '/' + n + '/project.' + d.fileExt
+            && d.fileUrl is string && d.fileUrl.size() <= 1000
+            && d.originalName is string && d.originalName.size() <= 120)
+          ||
+          (d.projectKind == 'link'
+            && d.keys().hasOnly(linkKeys) && d.keys().hasAll(linkKeys)
+            && d.linkUrl is string && d.linkUrl.size() <= 500 && d.linkUrl.matches('https://[^\\s]+'))
+        );
+    }
+
+    // ── submissionContacts: private (uploader + team emails) ──
+    match /submissionContacts/{id} {
+      allow read: if (collegeUser() && resource.data.ownerUid == request.auth.uid) || isAdmin();
+      allow create: if canUseSite(request.auth.uid) && validContacts(id);
+      allow update, delete: if isAdmin();
+    }
+
+    function validContacts(id) {
+      let uid = request.auth.uid;
+      let d = request.resource.data;
+      let keys = ['ownerUid', 'ownerEmail', 'teamMembers', 'createdAt'];
+      return id == uid + '_' + nextN(userBefore(uid).uploadsUsed)
+        && existsAfter(/databases/$(database)/documents/submissionRequests/$(id))
+        && d.keys().hasOnly(keys) && d.keys().hasAll(keys)
+        && d.ownerUid == uid
+        && d.ownerEmail == request.auth.token.email.lower()
+        && d.teamMembers is list && d.teamMembers.size() >= 1 && d.teamMembers.size() <= 6
+        && d.createdAt == request.time;
+    }
+
+    // ── uploadRequests: Rule 3, "let me upload another" ───────
+    // uploadRequests/{uid} is a person's latest request. Status: pending | accepted | denied.
+    // A person can create it, or set it back to "pending" only if the last one was accepted or
+    // denied (so never two pending at once), and only once their uploads are used up.
+    // Only admins can accept or deny.
+    match /uploadRequests/{uid} {
+      allow read: if (collegeUser() && request.auth.uid == uid) || isAdmin();
+      allow create: if (collegeUser() || isAdmin()) && request.auth.uid == uid && validRequest();
+      allow update: if ((collegeUser() || isAdmin()) && request.auth.uid == uid
+                        && resource.data.status in ['accepted', 'denied'] && validRequest())
+                    || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    function validRequest() {
+      let d = request.resource.data;
+      let u = userBefore(request.auth.uid);
+      let keys = ['uid', 'email', 'status', 'reason', 'createdAt'];
+      return d.keys().hasOnly(keys) && d.keys().hasAll(keys)
+        && d.status == 'pending'
+        && d.uid == request.auth.uid
+        && d.email == request.auth.token.email.lower()
+        && d.reason is string && d.reason.size() <= 300
+        && d.createdAt == request.time
+        && u.uploadsUsed >= u.uploadsAllowed;                       // only when the upload is used up
+    }
+
+    // ── seats: Rule 4, at most 80 people signed in ────────────
+    // Only seats "0" … "79" exist. A live seat can't be taken by someone else.
+    match /slots/{slotId} {
+      allow read: if true;                       // lets the sign-in page show "42 of 80". Holds no emails.
+      allow create, update: if collegeUser() && validSeat(slotId)
+        && request.resource.data.keys().hasOnly(['uid', 'lastSeen'])
+        && request.resource.data.keys().hasAll(['uid', 'lastSeen'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.lastSeen == request.time
+        && getAfter(/databases/$(database)/documents/sessions/$(request.auth.uid)).data.slot == slotId
+        && (resource == null
+            || resource.data.uid == request.auth.uid                                      // my own seat
+            || resource.data.lastSeen + duration.value(5, 'm') < request.time);          // or one that went quiet
+      allow delete: if isAdmin() || (collegeUser() && resource.data.uid == request.auth.uid);   // admins can free a seat
+    }
+
+    match /sessions/{uid} {
+      allow read: if collegeUser() && request.auth.uid == uid;
+      allow create, update: if collegeUser() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['slot', 'lastSeen'])
+        && request.resource.data.keys().hasAll(['slot', 'lastSeen'])
+        && validSeat(request.resource.data.slot)
+        && request.resource.data.lastSeen == request.time;
+      allow delete: if false;
+    }
+
+    // ── blocked: an admin blocks a person by creating blocked/{their uid} ──
+    // { email, reason, blockedAt }. The person can read their own document, so the page can tell them why.
+    // Delete the document to unblock.
+    match /blocked/{uid} {
+      allow read: if (signedIn() && request.auth.uid == uid) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ── admins: add entries by hand in the console ────────────
+    match /admins/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;   // so a future admin panel can check "am I an admin"
+      allow write: if false;
+    }
+
+    // everything else is closed
+    match /{document=**} { allow read, write: if false; }
+  }
+}

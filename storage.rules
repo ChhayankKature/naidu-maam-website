@@ -1,0 +1,59 @@
+rules_version = '2';
+
+// Rule 1: only verified, non-blocked @rbunagpur.in / @rknec.edu accounts can upload.
+// Rule 2: only while they still have an upload left (reads users/{uid} in Firestore),
+//         and only into the folder for their next upload, so old uploads can't be overwritten.
+// Rule 5: 5 MB per file, and only the file types the website offers.
+// Admins can also upload as a user (any email) and are the only ones who can delete files.
+// Anyone (guests too) can read, because the gallery is public.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function collegeUser() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower().matches('[^+@]+@(rbunagpur\\.in|rknec\\.edu)');
+    }
+
+    // An admin is anyone with a document at admins/{their uid} (added by hand in the console).
+    function isAdmin() {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid));
+    }
+
+    function nextN(used) {
+      return ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20'][used];
+    }
+
+    function canUpload(uid, n) {
+      let u = firestore.get(/databases/(default)/documents/users/$(uid)).data;
+      return request.auth != null && request.auth.uid == uid
+        && ((collegeUser() && !firestore.exists(/databases/(default)/documents/blocked/$(uid)))  // blocked people can't upload
+            || isAdmin())                                                                       // admins can upload as a user
+        && u.uploadsUsed < u.uploadsAllowed
+        && n == nextN(u.uploadsUsed);
+    }
+
+    function okTypeFor(fileName) {
+      let t = request.resource.contentType;
+      return (fileName == 'cover.webp'   && t == 'image/webp')
+          || (fileName == 'project.pdf'  && t == 'application/pdf')
+          || (fileName == 'project.doc'  && t == 'application/msword')
+          || (fileName == 'project.docx' && t == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+          || (fileName == 'project.ppt'  && t == 'application/vnd.ms-powerpoint')
+          || (fileName == 'project.pptx' && t == 'application/vnd.openxmlformats-officedocument.presentationml.presentation')
+          || (fileName == 'project.odp'  && t == 'application/vnd.oasis.opendocument.presentation');
+    }
+
+    match /submissions/{uid}/{n}/{fileName} {
+      allow read: if true;
+      allow create, update: if canUpload(uid, n)
+        && request.resource.size > 0
+        && request.resource.size <= 5 * 1024 * 1024
+        && okTypeFor(fileName);
+      allow delete: if isAdmin();   // the admin panel removes files when it declines or removes a project
+    }
+
+    match /{allPaths=**} { allow read, write: if false; }
+  }
+}

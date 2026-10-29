@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Sign in | Dr. Anita Sharma</title> <!-- SAMPLE name, same as landing.html -->
+    <meta name="color-scheme" content="dark light" />
+    <style>
+      /* same color as the loading screen, so the jump between pages is invisible */
+      html { background: #02060a; }
+      html[data-theme="light"] { background: #ffffff; }
+    </style>
+    <script>
+      // Sets the theme before the page paints (no white/black flash). Same key as the landing page.
+      (function () {
+        var t = "dark";
+        try { t = localStorage.getItem("nc-theme") || "dark"; } catch (e) {}
+        document.documentElement.setAttribute("data-theme", t === "light" ? "light" : "dark");
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/auth/entry.jsx"></script>
+  </body>
+</html>
